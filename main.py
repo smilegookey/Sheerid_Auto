@@ -775,7 +775,12 @@ def main():
         print('[错误] 请先创建 config.json！参考 config.example.json')
         return
 
-    config = json.loads(CONFIG_FILE.read_text(encoding='utf-8'))
+    def _load_json_file(path: Path):
+        """Load JSON while gracefully handling BOM."""
+        content = path.read_text(encoding='utf-8-sig')
+        return json.loads(content)
+
+    config = _load_json_file(CONFIG_FILE)
 
     if not config.get('accessToken'):
         print('[错误] config.json 中缺少 accessToken')
@@ -811,7 +816,7 @@ def main():
         print('[错误] 请先创建 data.txt！参考 data.example.txt')
         return
 
-    lines = [l.strip() for l in DATA_FILE.read_text(encoding='utf-8').split('\n')
+    lines = [l.strip() for l in DATA_FILE.read_text(encoding='utf-8-sig').split('\n')
              if l.strip() and not l.startswith('#')]
 
     if not lines:
