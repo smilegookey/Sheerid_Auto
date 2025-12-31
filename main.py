@@ -8,6 +8,7 @@ GitHub: https://github.com/
 使用前请阅读 README.md
 """
 
+import argparse
 import json
 import random
 import time
@@ -29,7 +30,7 @@ except ImportError:
     HAS_REQUESTS_GO = False
     print("[警告] 未安装 requests-go，将使用普通 requests（无 TLS 指纹模拟）")
 
-# 配置文件路径
+# 配置文件路径（可通过命令行自定义）
 BASE_DIR = Path(__file__).parent
 CONFIG_FILE = BASE_DIR / 'config.json'
 DATA_FILE = BASE_DIR / 'data.txt'
@@ -850,7 +851,33 @@ def log_result(msg):
         f.write(f"[{timestamp}] {msg}\n")
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description='SheerID Verification Tool')
+    parser.add_argument('--config', type=Path, default=CONFIG_FILE, help='配置文件路径，默认 config.json')
+    parser.add_argument('--data', type=Path, default=DATA_FILE, help='数据文件路径，默认 data.txt')
+    parser.add_argument('--proxy', type=Path, default=PROXY_FILE, help='代理文件路径，默认 proxy.txt')
+    parser.add_argument('--tls-json-dir', type=Path, default=TLS_JSON_DIR, help='TLS 指纹目录，默认 tls_json')
+    parser.add_argument('--result', type=Path, default=RESULT_FILE, help='结果输出文件，默认 result.txt')
+    parser.add_argument('--used', type=Path, default=USED_FILE, help='已使用数据记录文件，默认 used.txt')
+    parser.add_argument('--continue-on-success', action='store_true', help='完成一条验证后继续处理剩余数据')
+    return parser.parse_args()
+
+
+def override_paths(args):
+    """根据命令行参数覆盖默认路径"""
+    global CONFIG_FILE, DATA_FILE, RESULT_FILE, PROXY_FILE, TLS_JSON_DIR, USED_FILE
+    CONFIG_FILE = args.config
+    DATA_FILE = args.data
+    RESULT_FILE = args.result
+    PROXY_FILE = args.proxy
+    TLS_JSON_DIR = args.tls_json_dir
+    USED_FILE = args.used
+
+
 def main():
+    args = parse_args()
+    override_paths(args)
+
     print()
     print('=' * 50)
     print('  SheerID Verification Tool')
@@ -956,9 +983,11 @@ def main():
             remove_from_data(line)
             print()
             print('-' * 50)
-            print('  验证成功! 停止运行')
+            print('  验证成功! 停止运行' if not args.continue_on_success else '  验证成功! 继续处理后续数据')
             print('-' * 50)
-            break
+            if not args.continue_on_success:
+                break
+            i += 1
         elif result.get('skip'):
             skip_count += 1
             print(f"    [SKIP] 资料已验证过")
