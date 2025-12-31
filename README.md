@@ -154,6 +154,31 @@ socks5://user:pass@proxy.example.com:1080
 python main.py
 ```
 
+### 运行参数
+
+支持通过参数自定义配置、数据及输出路径，或在成功后继续处理后续数据：
+
+```bash
+python main.py \
+  --config ./config.json \
+  --data ./data.txt \
+  --proxy ./proxy.txt \
+  --tls-json-dir ./tls_json \
+  --result ./result.txt \
+  --used ./used.txt \
+  --continue-on-success
+```
+
+参数说明：
+
+- `--config`：配置文件路径，默认 `config.json`
+- `--data`：数据文件路径，默认 `data.txt`
+- `--proxy`：代理配置文件路径，默认 `proxy.txt`
+- `--tls-json-dir`：TLS 指纹目录，默认 `tls_json`
+- `--result`：结果输出文件，默认 `result.txt`
+- `--used`：已使用数据记录文件，默认 `used.txt`
+- `--continue-on-success`：启用后，验证成功后不会立即退出，会继续处理剩余数据
+
 ## 输出文件
 
 - `result.txt` - 验证结果日志
