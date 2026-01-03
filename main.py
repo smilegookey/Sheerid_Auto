@@ -20,6 +20,14 @@ from email.header import decode_header
 from dataclasses import dataclass
 from pathlib import Path
 
+from verification_utils import (
+    BRANCH_ORG_MAP,
+    extract_email_token,
+    extract_verification_link,
+    match_branch,
+    parse_data_line,
+)
+
 try:
     import requests_go
     from requests_go import tls_config as tls_config_module
@@ -40,24 +48,6 @@ USED_FILE = BASE_DIR / 'used.txt'
 
 DEFAULT_PROGRAM_ID = '690415d58971e73ca187d8c9'
 DEFAULT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-
-# Branch 映射
-BRANCH_ORG_MAP = {
-    'Army': {'id': 4070, 'name': 'Army'},
-    'Air Force': {'id': 4073, 'name': 'Air Force'},
-    'Navy': {'id': 4072, 'name': 'Navy'},
-    'Marine Corps': {'id': 4071, 'name': 'Marine Corps'},
-    'Coast Guard': {'id': 4074, 'name': 'Coast Guard'},
-    'Space Force': {'id': 4544268, 'name': 'Space Force'},
-    'Army National Guard': {'id': 4075, 'name': 'Army National Guard'},
-    'Army Reserve': {'id': 4076, 'name': 'Army Reserve'},
-    'Air National Guard': {'id': 4079, 'name': 'Air National Guard'},
-    'Air Force Reserve': {'id': 4080, 'name': 'Air Force Reserve'},
-    'Navy Reserve': {'id': 4078, 'name': 'Navy Reserve'},
-    'Marine Corps Forces Reserve': {'id': 4077, 'name': 'Marine Corps Forces Reserve'},
-    'Coast Guard Reserve': {'id': 4081, 'name': 'Coast Guard Reserve'}
-}
-
 
 @dataclass(frozen=True)
 class TlsProfile:
@@ -307,42 +297,6 @@ def generate_newrelic_headers():
     }
 
 
-def match_branch(input_str):
-    """匹配 branch"""
-    normalized = input_str.upper().replace('US ', '').strip()
-
-    for branch in BRANCH_ORG_MAP:
-        if branch.upper() == normalized:
-            return branch
-
-    if 'MARINE' in normalized and 'RESERVE' not in normalized:
-        return 'Marine Corps'
-    if 'ARMY' in normalized and 'NATIONAL' in normalized:
-        return 'Army National Guard'
-    if 'ARMY' in normalized and 'RESERVE' in normalized:
-        return 'Army Reserve'
-    if 'ARMY' in normalized:
-        return 'Army'
-    if 'NAVY' in normalized and 'RESERVE' in normalized:
-        return 'Navy Reserve'
-    if 'NAVY' in normalized:
-        return 'Navy'
-    if 'AIR' in normalized and 'NATIONAL' in normalized:
-        return 'Air National Guard'
-    if 'AIR' in normalized and 'RESERVE' in normalized:
-        return 'Air Force Reserve'
-    if 'AIR' in normalized and 'FORCE' in normalized:
-        return 'Air Force'
-    if 'COAST' in normalized and 'RESERVE' in normalized:
-        return 'Coast Guard Reserve'
-    if 'COAST' in normalized:
-        return 'Coast Guard'
-    if 'SPACE' in normalized:
-        return 'Space Force'
-
-    return 'Army'
-
-
 def load_random_proxy(proxy_file):
     """随机选择一个代理"""
     if not proxy_file.exists():
@@ -493,25 +447,6 @@ def create_session(proxy_dict, tls_profile):
         session.proxies = proxy_dict
 
     return session
-
-
-def extract_verification_link(content):
-    """从邮件内容提取验证链接"""
-    match = re.search(r'href="(https://services\.sheerid\.com/verify/[^"]+emailToken=[^"]+)"', content)
-    if match:
-        return match.group(1).replace('&amp;', '&')
-
-    match = re.search(r'https://services\.sheerid\.com/verify/[^\s<>"]+emailToken=\d+', content)
-    if match:
-        return match.group(0)
-
-    return None
-
-
-def extract_email_token(url):
-    """从验证链接提取 emailToken"""
-    match = re.search(r'emailToken=(\d+)', url)
-    return match.group(1) if match else None
 
 
 def is_verification_email(content):
@@ -804,30 +739,6 @@ def verify(access_token, program_id, user_data, email, proxy_dict, tls_profile, 
         return {'success': False, 'error': str(e)}
 
 
-def parse_data_line(line):
-    """解析数据行: firstName|lastName|branch|birthDate|dischargeDate"""
-    parts = line.split('|')
-    if len(parts) < 4:
-        return None
-
-    first_name = parts[0].strip()
-    last_name = parts[1].strip()
-    branch = parts[2].strip()
-    birth_date = parts[3].strip()
-    discharge_date = parts[4].strip() if len(parts) > 4 else '2025-01-02'
-
-    branch_name = match_branch(branch)
-    org = BRANCH_ORG_MAP.get(branch_name, BRANCH_ORG_MAP['Army'])
-
-    return {
-        'firstName': first_name,
-        'lastName': last_name,
-        'birthDate': birth_date,
-        'dischargeDate': discharge_date,
-        'organization': org
-    }
-
-
 def move_to_used(line, status):
     """将用过的数据移到 used.txt"""
     timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
@@ -864,7 +775,12 @@ def main():
         print('[错误] 请先创建 config.json！参考 config.example.json')
         return
 
-    config = json.loads(CONFIG_FILE.read_text(encoding='utf-8'))
+    def _load_json_file(path: Path):
+        """Load JSON while gracefully handling BOM."""
+        content = path.read_text(encoding='utf-8-sig')
+        return json.loads(content)
+
+    config = _load_json_file(CONFIG_FILE)
 
     if not config.get('accessToken'):
         print('[错误] config.json 中缺少 accessToken')
@@ -900,7 +816,7 @@ def main():
         print('[错误] 请先创建 data.txt！参考 data.example.txt')
         return
 
-    lines = [l.strip() for l in DATA_FILE.read_text(encoding='utf-8').split('\n')
+    lines = [l.strip() for l in DATA_FILE.read_text(encoding='utf-8-sig').split('\n')
              if l.strip() and not l.startswith('#')]
 
     if not lines:
